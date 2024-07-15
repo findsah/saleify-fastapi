@@ -1,13 +1,14 @@
-from app import models, oauth, schemas
-from app.database import engine
-from app.config import settings
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Depends
+from pydantic import BaseModel, EmailStr
+from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth
+from fastapi.openapi.models import OAuthFlows as OAuthFlowsModel, OAuthFlowPassword
 
-models.Base.metadata.create_all(bind=engine)
-
-app = FastAPI()
+app = FastAPI(
+    title="Saleify API",
+    description="API for Saleify application, providing user authentication and social login functionality.",
+    version="1.0.0"
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -17,43 +18,97 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router)
+fake_db = {
+    "users": []
+}
 
-models.Base.metadata.create_all(bind=engine)
+class Login(BaseModel):
+    email: EmailStr
+    password: str
 
-app = FastAPI()
+    class Config:
+        schema_extra = {
+            "example": {
+                "email": "user@example.com",
+                "password": "yourpassword"
+            }
+        }
 
-@app.post("/signup", response_model=schemas.User)
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    db_user = crud.get_user_by_email(db, email=user.email)
-    if db_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    return crud.create_user(db=db, user=user)
+class Signup(BaseModel):
+    username: str
+    email: EmailStr
+    password: str
+    terms: bool
 
-@app.post("/login", response_model=schemas.Token)
-def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = oauth.authenticate_user(db, form_data.username, form_data.password)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    access_token = oauth.create_access_token(data={"sub": user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
+    class Config:
+        schema_extra = {
+            "example": {
+                "username": "yourusername",
+                "email": "user@example.com",
+                "password": "yourpassword",
+                "terms": True
+            }
+        }
 
-@app.post("/login/google", response_model=schemas.Token)
-async def login_with_google(token: str, db: Session = Depends(get_db)):
-    user = await oauth.google_login(db, token)
-    access_token = oauth.create_access_token(data={"sub": user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
+class GoogleResponse(BaseModel):
+    email: EmailStr
+    google_id: str
 
-@app.post("/login/facebook", response_model=schemas.Token)
-async def login_with_facebook(token: str, db: Session = Depends(get_db)):
-    user = await oauth.facebook_login(db, token)
-    access_token = oauth.create_access_token(data={"sub": user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
+    class Config:
+        schema_extra = {
+            "example": {
+                "email": "user@example.com",
+                "google_id": "googleid"
+            }
+        }
 
-@app.get("/users/me", response_model=schemas.User)
-async def read_users_me(current_user: schemas.User = Depends(oauth.get_current_user)):
-    return current_user
+class FacebookResponse(BaseModel):
+    email: EmailStr
+    facebook_id: str
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "email": "user@example.com",
+                "facebook_id": "facebookid"
+            }
+        }
+
+@app.post("/login", summary="User Login", description="Login a user with email and password")
+async def login(login: Login):
+    for user in fake_db["users"]:
+        if user["email"] == login.email and user["password"] == login.password:
+            return {"message": "Login successful"}
+    raise HTTPException(status_code=400, detail="Invalid credentials")
+
+@app.post("/signup", summary="User Signup", description="Register a new user with username, email, password, and terms acceptance")
+async def signup(signup: Signup):
+    for user in fake_db["users"]:
+        if user["email"] == signup.email:
+            raise HTTPException(status_code=400, detail="Email already registered")
+    if not signup.terms:
+        raise HTTPException(status_code=400, detail="You must accept the terms and conditions")
+    fake_db["users"].append(signup.dict())
+    return {"message": "Signup successful"}
+
+@app.post("/login/google", summary="Google Login", description="Login or register a user with Google account information")
+async def login_with_google(response: GoogleResponse):
+    for user in fake_db["users"]:
+        if user["email"] == response.email:
+            return {"message": "Login with Google successful"}
+    # If user not found, register them
+    fake_db["users"].append({"email": response.email, "google_id": response.google_id})
+    return {"message": "User registered with Google"}
+
+@app.post("/login/facebook", summary="Facebook Login", description="Login or register a user with Facebook account information")
+async def login_with_facebook(response: FacebookResponse):
+    for user in fake_db["users"]:
+        if user["email"] == response.email:
+            return {"message": "Login with Facebook successful"}
+    # If user not found, register them
+    fake_db["users"].append({"email": response.email, "facebook_id": response.facebook_id})
+    return {"message": "User registered with Facebook"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
