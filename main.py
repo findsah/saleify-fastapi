@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, EmailStr
 from fastapi.middleware.cors import CORSMiddleware
+import jwt
+from datetime import datetime, timedelta
 
 app = FastAPI(
     title="Saleify API",
@@ -72,6 +74,17 @@ class FacebookResponse(BaseModel):
             }
         }
 
+SECRET_KEY = "your_secret_key"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
 @app.post("/login", summary="User Login", description="Login a user with email and password")
 async def login(login: Login):
     for user in fake_db["users"]:
@@ -80,7 +93,13 @@ async def login(login: Login):
                 "username": user.get("username"),
                 "email": user["email"]
             }
-            return {"message": "Login successful", "user": user_details}
+            access_token = create_access_token(data={"sub": user["email"]})
+            return {
+                "message": "Login successful",
+                "user": user_details,
+                "access_token": access_token,
+                "token_type": "bearer"
+            }
     raise HTTPException(status_code=400, detail="Invalid credentials")
 
 @app.post("/signup", summary="User Signup", description="Register a new user with username, email, password, and terms acceptance")
