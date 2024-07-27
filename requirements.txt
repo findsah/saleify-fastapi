@@ -21,6 +21,7 @@ markdown-it-py==3.0.0
 MarkupSafe==2.1.5
 mdurl==0.1.2
 packaging==24.1
+passlib==1.7.4
 pip-tools==7.4.1
 pydantic==2.8.2
 pydantic_core==2.20.1
