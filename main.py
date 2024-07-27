@@ -76,7 +76,11 @@ class FacebookResponse(BaseModel):
 async def login(login: Login):
     for user in fake_db["users"]:
         if user["email"] == login.email and user["password"] == login.password:
-            return {"message": "Login successful"}
+            user_details = {
+                "username": user.get("username"),
+                "email": user["email"]
+            }
+            return {"message": "Login successful", "user": user_details}
     raise HTTPException(status_code=400, detail="Invalid credentials")
 
 @app.post("/signup", summary="User Signup", description="Register a new user with username, email, password, and terms acceptance")
